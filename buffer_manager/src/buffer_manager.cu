@@ -7,10 +7,15 @@
 
 #include <stdio.h>
 
-__host__ unsigned char *blank_buffer(int width, int height){
-    unsigned char *f;
-    cudaMalloc(&f, width * height * 3);
-    return f;
+#define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
+void check_cuda(cudaError_t result, char const *const func, const char *const file, int const line) {
+    if (result) {
+        std::cerr << "CUDA error = " << static_cast<unsigned int>(result) << " at " <<
+                  file << ":" << line << " '" << func << "' \n";
+        // Make sure we call CUDA Device Reset before exiting
+        cudaDeviceReset();
+        exit(99);
+    }
 }
 
 __global__ void fade_buffer_kernel(unsigned char* buff, int width, int height){
@@ -18,7 +23,7 @@ __global__ void fade_buffer_kernel(unsigned char* buff, int width, int height){
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     
-    printf("X: %d  | Y: %d\n", x, y);
+    // printf("X: %d  | Y: %d\n", x, y);
 
     // std::cout << "X: " << x << "Y: " << y << std::endl;
 
@@ -59,17 +64,24 @@ int main(int argc, char const *argv[])
 {
 
     const int width = 800, height = 600;
-    const int num_thread_per_block = 128, num_blocks = width * height / num_thread_per_block ;
+    const int num_thread_per_block = 100;
 
-    auto buff = blank_buffer(800, 600);
+    dim3 blocks(width / num_thread_per_block + 1, height / num_thread_per_block + 1);
+    dim3 threads(num_thread_per_block, num_thread_per_block);
 
-    fade_buffer_kernel<<<num_blocks, num_thread_per_block>>>(buff, width, height);
+    unsigned char* buff;
+    checkCudaErrors(cudaMalloc(&buff, width * height * 3));
+    unsigned char *outbuff = (unsigned char *)malloc(width * height * 3);
 
-    unsigned char *hostbuff = (unsigned char *)malloc(width * height * 3);
-    cudaMemcpy(hostbuff, buff, width * height * 3, cudaMemcpyDeviceToHost);
-    save_ppm("testimage.ppm", hostbuff, 800, 600);
+    fade_buffer_kernel<<<blocks, threads>>>(buff, width, height);
+    checkCudaErrors(cudaGetLastError());
+    checkCudaErrors(cudaDeviceSynchronize());
+
+    cudaMemcpy(outbuff, buff, width * height * 3, cudaMemcpyDeviceToHost);
+    save_ppm("testimage.ppm", outbuff, 800, 600);
 
     cudaFree(buff);
-    free(hostbuff);
+    free(outbuff);
+
     return 0;
 }
