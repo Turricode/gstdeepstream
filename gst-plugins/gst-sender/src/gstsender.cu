@@ -19,6 +19,10 @@
 #include <gst/base/base.h>
 #include <gst/controller/controller.h>
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cudaEGL.h>
+
 #include "gstsender.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_sender_debug);
@@ -48,6 +52,8 @@ static void gst_sender_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec);
 static void gst_sender_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec);
+GstFlowReturn fill (GstBaseSrc * src, guint64 offset, guint size, GstBuffer * buf);
+
 
 
 static void
@@ -55,16 +61,21 @@ gst_sender_class_init (GstsenderClass * klass)
 {
   GObjectClass *gobject_class;
   GstElementClass *gstelement_class;
+  GstBaseSrcClass *gstsrc_class;
 
   gobject_class = (GObjectClass *) klass;
   gstelement_class = (GstElementClass *) klass;
+  gstsrc_class = (GstBaseSrcClass *) klass;
 
   gobject_class->set_property = gst_sender_set_property;
   gobject_class->get_property = gst_sender_get_property;
 
+  gstsrc_class->fill = fill;
+
   g_object_class_install_property (gobject_class, PROP_SILENT,
-      g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
-          FALSE, G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE));
+    g_param_spec_boolean ("silent", "Silent",
+              "Whether to be very verbose or not",
+              FALSE,  G_PARAM_READWRITE));
 
   gst_element_class_set_details_simple (gstelement_class,
       "sender",
@@ -117,12 +128,70 @@ gst_sender_get_property (GObject * object, guint prop_id,
   }
 }
 
+static u_int32_t *generate_fade(int width, int height){
+
+    u_int32_t *f;
+    cudaError_t stat = cudaMallocHost(&f, width * height * 3);
+
+    if(stat != cudaSuccess){
+      g_print("Failed to allocate memory for fade buffer");
+    }
+
+    for(int y = height - 1; y >= 0; y++){
+        for(int x = 0; x < width; x++){
+
+            int index = y * width * 3 + x * 3;
+
+            f[index] = u_int32_t(255.f * float(x) / width);
+            f[index + 1] = u_int32_t(255.f * float(y) / height);
+            f[index = 2] = u_int32_t(255.f * 0.2);
+
+        }
+    }
+
+  return f;
+
+}
+
+GstFlowReturn fill (GstBaseSrc * src, guint64 offset, guint size, GstBuffer * buf){
+  const int width = 1920;
+  const int height = 1080;
+  int dmabuf_fd = 0;
+  
+  GstMapInfo *map;
+  u_int32_t *data = generate_fade(width, height);
+  
+    
+  return GST_FLOW_OK;
+
+}
+
 static gboolean
 sender_init (GstPlugin * sender)
 {
   return gst_element_register (sender, "sender", GST_RANK_NONE,
       GST_TYPE_SENDER);
 }
+
+#ifndef PACKAGE
+#define PACKAGE "sender"
+#endif
+
+#ifndef PACKAGE_VERSION
+#define PACKAGE_VERSION "1.0"
+#endif
+
+#ifndef GST_LICENSE
+#define GST_LICENSE "unknown"
+#endif
+
+#ifndef GST_PACKAGE_NAME
+#define GST_PACKAGE_NAME "sender"
+#endif
+
+#ifndef GST_PACKAGE_ORIGIN
+#define GST_PACKAGE_ORIGIN "BISECT LDA"
+#endif
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,

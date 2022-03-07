@@ -13,7 +13,7 @@ gstsender_dep = dependency('gstreamer-1.0',
     fallback: ['gst-plugins-base'])
 
 sender_sources = [
-  'src/gstsender.c',
+  'src/gstsender.cu',
   ]
 
 gstsender = library('gstsender',
